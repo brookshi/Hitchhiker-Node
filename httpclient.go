@@ -55,16 +55,12 @@ type runError struct {
 }
 
 // Request is a http request
-func (c *testCase) doRequest(method, url, body string) (string, error) {
+func (c *testCase) doRequest() {
 	now := time.Now()
 	var dnsStart, connectStart time.Time
 	var duration duration
-	var bodyReader io.Reader
-	if body != "" {
-		bodyReader = strings.NewReader(body)
-	}
-	req, err := http.NewRequest(method, url, bodyReader)
-	http.Header
+
+	req, err := buildRequest(c.body)
 	if err != nil {
 		fmt.Println(err)
 		return "", err
