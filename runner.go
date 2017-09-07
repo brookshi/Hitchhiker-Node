@@ -17,10 +17,8 @@ type testCase struct {
 	concurrencyCount int
 	qps              int
 	timeout          int
-	keepAlive        bool
 	results          chan []runResult
-	finishChannel    chan struct{}
-	startTime        time.Time
+	trace            func(rst runResult)
 }
 
 type requestItem struct {
@@ -60,8 +58,8 @@ type runError struct {
 
 func (c *testCase) Run() {
 	c.results = make(chan []runResult, c.totalCount)
-	c.startTime = time.Now()
 	c.start()
+	close(c.results)
 }
 
 func (c *testCase) start() {
@@ -88,24 +86,27 @@ func (c *testCase) work(times int) {
 		if c.qps > 0 {
 			<-throttle
 		}
-		c.doRequest()
+		c.doRequest(httpClient)
 	}
 }
 
-func (c *testCase) doRequest() {
+func (c *testCase) doRequest(httpClient http.Client) {
 	results := make([]runResult, len(c.requestBodys))
 	for i, body := range c.requestBodys {
-		results[i] = doRequestItem(body)
+		results[i] = doRequestItem(body, httpClient)
+		if c.trace != nil {
+			c.trace(results[i])
+		}
 	}
 	c.results <- results
 }
 
-func doRequestItem(body requestBody) (result runResult) {
+func doRequestItem(body requestBody, httpClient http.Client) (result runResult) {
 	var dnsStart, connectStart, reqStart time.Time
 	var duration duration
 	result = runResult{id: body.id}
 
-	now := time.Now()
+	//now := time.Now()
 	req, err := buildRequest(body)
 
 	if err != nil {
@@ -134,7 +135,7 @@ func doRequestItem(body requestBody) (result runResult) {
 			},
 		}
 		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-		res, err := http.DefaultClient.Do(req)
+		res, err := httpClient.Do(req)
 		if err == nil {
 			result.duration = duration
 			result.status = res.StatusCode
@@ -149,6 +150,7 @@ func doRequestItem(body requestBody) (result runResult) {
 			defer res.Body.Close()
 		}
 	}
+	return
 }
 
 func buildRequest(reqBody requestBody) (*http.Request, error) {

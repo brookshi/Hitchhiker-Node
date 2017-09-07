@@ -2,42 +2,42 @@ package main
 
 import (
 	"fmt"
-	"time"
-	//"github.com/ddliu/go-httpclient"
 )
 
 func main() {
-	start := time.Now()
-	ch := make(chan string)
-	contents := make([]string, 10)
-	for i := 0; i < 10; i++ {
-		go test(ch)
 
+	tCase := &testCase{
+		requestBodys: []requestBody{
+			requestBody{
+				id:      "1",
+				method:  "GET",
+				url:     "https://httpbin.org/get",
+				headers: make(map[string]string),
+				tests:   "",
+			},
+			requestBody{
+				id:      "2",
+				method:  "POST",
+				url:     "https://httpbin.org/post",
+				headers: map[string]string{"11": "22"},
+				body:    "test",
+				tests:   "",
+			},
+		},
+		totalCount:       10,
+		concurrencyCount: 1,
+		qps:              1,
+		timeout:          600,
+		trace: func(result runResult) {
+			fmt.Printf("result: %s \n", result.body)
+		},
 	}
-	sec := time.Since(start).Seconds()
-	for i := 0; i < 10; i++ {
-		contents[i] = <-ch
-	}
-	fmt.Printf("%.4fs elapsed \n", sec)
-	sec = time.Since(start).Seconds()
-	fmt.Printf("%.4fs total elapsed \n", sec)
-	fmt.Printf("length: %d \n", len(contents))
-	fmt.Printf("first content: %s", contents[0])
-	fmt.Printf("last content: %s", contents[9])
-}
 
-func test(ch chan<- string) {
-	content, err := Request("GET", "https://httpbin.org/get", "")
-	if err != nil {
-		fmt.Println(err)
-		ch <- ""
-		return
+	tCase.Run()
+	for rst := range tCase.results {
+		fmt.Printf("result length: %d \n", len(rst))
+		// for _, c := range rst {
+		// 	fmt.Printf("result: %s \n", c.body)
+		// }
 	}
-	//content, err := res.ToString()
-	if err != nil {
-		fmt.Println(err)
-		ch <- ""
-		return
-	}
-	ch <- content
 }
