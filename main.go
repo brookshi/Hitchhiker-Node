@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+
+	"github.com/brookshi/Hitchhiker-Node/hlog"
 )
 
 func main() {
-
+	hlog.Init()
 	tCase := &testCase{
 		requestBodys: []requestBody{
 			requestBody{
@@ -25,7 +27,7 @@ func main() {
 			},
 		},
 		totalCount:       10,
-		concurrencyCount: 1,
+		concurrencyCount: 5,
 		qps:              1,
 		timeout:          600,
 		trace: func(result runResult) {
@@ -34,10 +36,10 @@ func main() {
 	}
 
 	tCase.Run()
-	for rst := range tCase.results {
-		fmt.Printf("result length: %d \n", len(rst))
-		// for _, c := range rst {
-		// 	fmt.Printf("result: %s \n", c.body)
-		// }
-	}
+	// for rst := range tCase.results {
+	// 	fmt.Printf("result length: %d \n", len(rst))
+	// 	for _, c := range rst {
+	// 		fmt.Printf("result: %s \n", c.body)
+	// 	}
+	// }
 }
