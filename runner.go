@@ -8,6 +8,7 @@ import (
 	"net/http/httptrace"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,6 +19,7 @@ type testCase struct {
 	qps              int
 	timeout          int
 	results          chan []runResult
+	forceStop        int32
 	trace            func(rst runResult)
 }
 
@@ -58,6 +60,7 @@ type runError struct {
 
 func (c *testCase) Run() {
 	c.results = make(chan []runResult, c.totalCount)
+	atomic.StoreInt32(&c.forceStop, 0)
 	c.start()
 	close(c.results)
 }
@@ -86,6 +89,9 @@ func (c *testCase) work(times int) {
 		if c.qps > 0 {
 			<-throttle
 		}
+		if atomic.CompareAndSwapInt32(&c.forceStop, 1, 1) {
+			break
+		}
 		c.doRequest(httpClient)
 	}
 }
@@ -99,6 +105,10 @@ func (c *testCase) doRequest(httpClient http.Client) {
 		}
 	}
 	c.results <- results
+}
+
+func (c *testCase) stop() {
+	atomic.CompareAndSwapInt32(&c.forceStop, 0, 1)
 }
 
 func doRequestItem(body requestBody, httpClient http.Client) (result runResult) {
