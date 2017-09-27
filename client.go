@@ -20,6 +20,7 @@ const (
 	msg_start
 	msg_runResult
 	msg_stop
+	msg_status
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 	status_ready
 	status_working
 	status_finish
+	status_down
 )
 
 type config struct {
@@ -100,11 +102,12 @@ func (c *client) handleMsg(msg message) {
 			hlog.Info.Println("trace")
 			go c.send(message{status: status_working, code: msg_runResult, runResult: rst})
 		}
-		c.send(message{status: status_ready})
+		c.send(message{status: status_ready, code: msg_status})
 		hlog.Info.Println("status: ready")
 	case msg_start:
-		c.send(message{status: status_working})
+		c.send(message{status: status_working, code: msg_status})
 		c.testCase.Run()
+		c.finish()
 	case msg_stop:
 		c.finish()
 	}
@@ -118,7 +121,7 @@ func (c *client) send(msg message) {
 
 func (c *client) finish() {
 	c.testCase.stop()
-	c.send(message{status: status_finish})
+	c.send(message{status: status_finish, code: msg_status})
 }
 
 func readConfig() (config, error) {
