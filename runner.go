@@ -13,11 +13,11 @@ import (
 )
 
 type testCase struct {
-	requestBodys     []requestBody
-	totalCount       int
-	concurrencyCount int
-	qps              int
-	timeout          int
+	RequestBodyList  []requestBody `json:"requestBodyList"`
+	TotalCount       int           `json:"totalCount"`
+	ConcurrencyCount int           `json:"concurrencyCount"`
+	QPS              int           `json:"qps"`
+	Timeout          int           `json:"timeout"`
 	results          chan []runResult
 	forceStop        int32
 	trace            func(rst runResult)
@@ -29,37 +29,37 @@ type requestItem struct {
 }
 
 type requestBody struct {
-	id      string
-	method  string
-	url     string
-	body    string
-	headers map[string]string
-	tests   string
+	ID      string            `json:"id"`
+	Method  string            `json:"method"`
+	URL     string            `json:"url"`
+	Body    string            `json:"body"`
+	Headers map[string]string `json:"headers"`
+	Tests   string            `json:"tests"`
 }
 
 type runResult struct {
-	id            string
-	err           runError
-	body          string
-	status        int
-	statusMessage string
-	duration      duration
-	headers       http.Header
-	tests         map[string]bool
+	ID            string          `json:"id"`
+	Err           runError        `json:"error"`
+	Body          string          `json:"body"`
+	Status        int             `json:"status"`
+	StatusMessage string          `json:"statusMessage"`
+	Duration      duration        `json:"duration"`
+	Headers       http.Header     `json:"headers"`
+	Tests         map[string]bool `json:"tests"`
 }
 
 type duration struct {
-	dns     time.Duration
-	connect time.Duration
-	request time.Duration
+	DNS     time.Duration `json:"dns"`
+	Connect time.Duration `json:"connect"`
+	Request time.Duration `json:"request"`
 }
 
 type runError struct {
-	message string
+	Message string `json:"message"`
 }
 
 func (c *testCase) Run() {
-	c.results = make(chan []runResult, c.totalCount)
+	c.results = make(chan []runResult, c.TotalCount)
 	atomic.StoreInt32(&c.forceStop, 0)
 	c.start()
 	close(c.results)
@@ -67,11 +67,11 @@ func (c *testCase) Run() {
 
 func (c *testCase) start() {
 	var waiter sync.WaitGroup
-	waiter.Add(c.concurrencyCount)
+	waiter.Add(c.ConcurrencyCount)
 
-	for i := 0; i < c.concurrencyCount; i++ {
+	for i := 0; i < c.ConcurrencyCount; i++ {
 		go func() {
-			c.work(c.totalCount / c.concurrencyCount)
+			c.work(c.TotalCount / c.ConcurrencyCount)
 			waiter.Done()
 		}()
 	}
@@ -80,13 +80,13 @@ func (c *testCase) start() {
 
 func (c *testCase) work(times int) {
 	var throttle <-chan time.Time
-	if c.qps > 0 {
-		throttle = time.Tick(time.Duration(1e6/(c.qps)) * time.Microsecond)
+	if c.QPS > 0 {
+		throttle = time.Tick(time.Duration(1e6/(c.QPS)) * time.Microsecond)
 	}
 
-	httpClient := http.Client{Timeout: time.Duration(c.timeout) * time.Second}
+	httpClient := http.Client{Timeout: time.Duration(c.Timeout) * time.Second}
 	for i := 0; i < times; i++ {
-		if c.qps > 0 {
+		if c.QPS > 0 {
 			<-throttle
 		}
 		if atomic.CompareAndSwapInt32(&c.forceStop, 1, 1) {
@@ -97,8 +97,8 @@ func (c *testCase) work(times int) {
 }
 
 func (c *testCase) doRequest(httpClient http.Client) {
-	results := make([]runResult, len(c.requestBodys))
-	for i, body := range c.requestBodys {
+	results := make([]runResult, len(c.RequestBodyList))
+	for i, body := range c.RequestBodyList {
 		results[i] = doRequestItem(body, httpClient)
 		if c.trace != nil {
 			c.trace(results[i])
@@ -114,14 +114,14 @@ func (c *testCase) stop() {
 func doRequestItem(body requestBody, httpClient http.Client) (result runResult) {
 	var dnsStart, connectStart, reqStart time.Time
 	var duration duration
-	result = runResult{id: body.id}
+	result = runResult{ID: body.ID}
 
 	//now := time.Now()
 	req, err := buildRequest(body)
 
 	if err != nil {
 		fmt.Println(err)
-		result.err = runError{err.Error()}
+		result.Err = runError{err.Error()}
 		req.Close = true
 	} else {
 		trace := &httptrace.ClientTrace{
@@ -129,33 +129,33 @@ func doRequestItem(body requestBody, httpClient http.Client) (result runResult) 
 				dnsStart = time.Now()
 			},
 			DNSDone: func(info httptrace.DNSDoneInfo) {
-				duration.dns = time.Now().Sub(dnsStart)
+				duration.DNS = time.Now().Sub(dnsStart)
 			},
 			GetConn: func(hostPort string) {
 				connectStart = time.Now()
 			},
 			GotConn: func(info httptrace.GotConnInfo) {
-				duration.connect = time.Now().Sub(connectStart)
+				duration.Connect = time.Now().Sub(connectStart)
 			},
 			WroteRequest: func(info httptrace.WroteRequestInfo) {
 				reqStart = time.Now()
 			},
 			GotFirstResponseByte: func() {
-				duration.request = time.Now().Sub(reqStart)
+				duration.Request = time.Now().Sub(reqStart)
 			},
 		}
 		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 		res, err := httpClient.Do(req)
 		if err == nil {
-			result.duration = duration
-			result.status = res.StatusCode
-			result.statusMessage = res.Status
-			result.headers = res.Header
+			result.Duration = duration
+			result.Status = res.StatusCode
+			result.StatusMessage = res.Status
+			result.Headers = res.Header
 			content, err := ioutil.ReadAll(res.Body)
 			if err != nil {
-				result.err = runError{err.Error()}
+				result.Err = runError{err.Error()}
 			} else {
-				result.body = string(content)
+				result.Body = string(content)
 			}
 			defer res.Body.Close()
 		}
@@ -165,15 +165,15 @@ func doRequestItem(body requestBody, httpClient http.Client) (result runResult) 
 
 func buildRequest(reqBody requestBody) (*http.Request, error) {
 	var bodyReader io.Reader
-	if reqBody.body != "" {
-		bodyReader = strings.NewReader(reqBody.body)
+	if reqBody.Body != "" {
+		bodyReader = strings.NewReader(reqBody.Body)
 	}
-	req, err := http.NewRequest(reqBody.method, reqBody.url, bodyReader)
+	req, err := http.NewRequest(reqBody.Method, reqBody.URL, bodyReader)
 	if err != nil {
 		return nil, err
 	}
 	headers := make(http.Header)
-	for k, v := range reqBody.headers {
+	for k, v := range reqBody.Headers {
 		headers.Set(k, v)
 	}
 	req.Header = headers

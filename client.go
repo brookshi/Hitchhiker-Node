@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"io/ioutil"
 	"net"
@@ -15,20 +13,20 @@ import (
 )
 
 const (
-	msg_hardware = iota
-	msg_task
-	msg_start
-	msg_runResult
-	msg_stop
-	msg_status
+	msgHardware = iota
+	msgTask
+	msgStart
+	msgRunResult
+	msgStop
+	msgStatus
 )
 
 const (
-	status_idle = iota
-	status_ready
-	status_working
-	status_finish
-	status_down
+	statusIdle = iota
+	statusReady
+	statusWorking
+	statusFinish
+	statusDown
 )
 
 type config struct {
@@ -43,11 +41,11 @@ type client struct {
 }
 
 type message struct {
-	status    byte
-	code      byte
-	testCase  testCase
-	runResult runResult
-	cpuNum    int
+	Status    byte      `json:"status"`
+	Code      byte      `json:"code"`
+	TestCase  testCase  `json:"testCase"`
+	RunResult runResult `json:"runResult"`
+	CPUNum    int       `json:"cpuNum"`
 }
 
 func (c *client) Do() {
@@ -67,7 +65,7 @@ func (c *client) Do() {
 			go func() { c.errChan <- true }()
 		} else {
 			hlog.Info.Println("connect: success")
-			c.send(message{status: status_idle, code: msg_hardware, cpuNum: runtime.NumCPU()})
+			c.send(message{Status: statusIdle, Code: msgHardware, RunResult: runResult{ID: "1"}, CPUNum: runtime.NumCPU()})
 			hlog.Info.Println("status: idle")
 			go c.read()
 		}
@@ -95,33 +93,37 @@ func (c *client) read() {
 }
 
 func (c *client) handleMsg(msg message) {
-	switch msg.code {
-	case msg_task:
-		c.testCase = msg.testCase
+	switch msg.Code {
+	case msgTask:
+		c.testCase = msg.TestCase
 		c.testCase.trace = func(rst runResult) {
 			hlog.Info.Println("trace")
-			go c.send(message{status: status_working, code: msg_runResult, runResult: rst})
+			go c.send(message{Status: statusWorking, Code: msgRunResult, RunResult: rst})
 		}
-		c.send(message{status: status_ready, code: msg_status})
+		c.send(message{Status: statusReady, Code: msgStatus})
 		hlog.Info.Println("status: ready")
-	case msg_start:
-		c.send(message{status: status_working, code: msg_status})
+	case msgStart:
+		c.send(message{Status: statusWorking, Code: msgStatus})
 		c.testCase.Run()
 		c.finish()
-	case msg_stop:
+	case msgStop:
 		c.finish()
 	}
 }
 
 func (c *client) send(msg message) {
-	var bin_buf bytes.Buffer
-	binary.Write(&bin_buf, binary.BigEndian, msg)
-	c.conn.Write(bin_buf.Bytes())
+	buf, err := json.Marshal(msg)
+	if err != nil {
+		hlog.Error.Println("stringify message error: ", err)
+		return
+	}
+	hlog.Info.Println("send message: ", string(buf))
+	c.conn.Write(buf)
 }
 
 func (c *client) finish() {
 	c.testCase.stop()
-	c.send(message{status: status_finish, code: msg_status})
+	c.send(message{Status: statusFinish, Code: msgStatus})
 }
 
 func readConfig() (config, error) {
