@@ -82,6 +82,7 @@ func (c *client) read() {
 		content, err := reader.ReadBytes(byte('\n'))
 		if err != nil {
 			hlog.Error.Println("read:", err)
+			c.testCase.stop()
 			c.errChan <- true
 			return
 		}
