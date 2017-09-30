@@ -1,15 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"io/ioutil"
-	"net"
 	"os"
 	"runtime"
 	"time"
 
 	"github.com/brookshi/Hitchhiker-Node/hlog"
+	"golang.org/x/net/websocket"
 )
 
 const (
@@ -35,14 +34,14 @@ type config struct {
 }
 
 type client struct {
-	conn     net.Conn
+	conn     *websocket.Conn //net.Conn
 	errChan  chan bool
 	testCase testCase
 }
 
 type message struct {
 	Status    byte      `json:"status"`
-	Code      byte      `json:"code"`
+	Type      byte      `json:"type"`
 	TestCase  testCase  `json:"testCase"`
 	RunResult runResult `json:"runResult"`
 	CPUNum    int       `json:"cpuNum"`
@@ -59,13 +58,14 @@ func (c *client) Do() {
 	for {
 		c.errChan = make(chan bool)
 		throttle := time.Tick(config.Interval * time.Second)
-		c.conn, err = net.Dial("tcp", config.Address)
+		c.conn, err = websocket.Dial("ws://"+config.Address, "", "http://"+config.Address)
+		//c.conn, err = net.Dial("tcp", config.Address)
 		if err != nil {
 			hlog.Error.Println("connect:", err)
 			go func() { c.errChan <- true }()
 		} else {
 			hlog.Info.Println("connect: success")
-			c.send(message{Status: statusIdle, Code: msgHardware, RunResult: runResult{ID: "1"}, CPUNum: runtime.NumCPU()})
+			c.send(message{Status: statusIdle, Type: msgHardware, RunResult: runResult{ID: "1"}, CPUNum: runtime.NumCPU()})
 			hlog.Info.Println("status: idle")
 			go c.read()
 		}
@@ -78,33 +78,48 @@ func (c *client) Do() {
 func (c *client) read() {
 	defer c.conn.Close()
 	for {
-		reader := bufio.NewReader(c.conn)
-		content, err := reader.ReadBytes(byte('\n'))
+		var msg message
+		err := websocket.JSON.Receive(c.conn, &msg)
 		if err != nil {
 			hlog.Error.Println("read:", err)
 			c.testCase.stop()
 			c.errChan <- true
 			return
 		}
-		hlog.Info.Println("read: ", string(content))
-		var msg message
-		json.Unmarshal(content, &msg)
+		buf, _ := json.Marshal(msg)
+		hlog.Info.Println("read: ", string(buf))
 		go c.handleMsg(msg)
 	}
+	// reader := bufio.NewReader(c.conn)
+	// for {
+	// 	hlog.Info.Printf("read")
+	// 	content, err := reader.Read.ReadBytes(byte('\n'))
+	// 	if err != nil {
+	// 		hlog.Error.Println("read:", err)
+	// 		c.testCase.stop()
+	// 		c.errChan <- true
+	// 		return
+	// 	}
+	// 	hlog.Info.Println("read: ", string(content))
+	// 	var msg message
+	// 	json.Unmarshal(content, &msg)
+	// 	go c.handleMsg(msg)
+	// }
 }
 
 func (c *client) handleMsg(msg message) {
-	switch msg.Code {
+	switch msg.Type {
 	case msgTask:
 		c.testCase = msg.TestCase
 		c.testCase.trace = func(rst runResult) {
 			hlog.Info.Println("trace")
-			go c.send(message{Status: statusWorking, Code: msgRunResult, RunResult: rst})
+			c.send(message{Status: statusWorking, Type: msgRunResult, RunResult: rst})
 		}
-		c.send(message{Status: statusReady, Code: msgStatus})
+		c.send(message{Status: statusReady, Type: msgStatus})
 		hlog.Info.Println("status: ready")
 	case msgStart:
-		c.send(message{Status: statusWorking, Code: msgStatus})
+		hlog.Info.Println("status: start")
+		c.send(message{Status: statusWorking, Type: msgStatus})
 		c.testCase.Run()
 		c.finish()
 	case msgStop:
@@ -124,7 +139,7 @@ func (c *client) send(msg message) {
 
 func (c *client) finish() {
 	c.testCase.stop()
-	c.send(message{Status: statusFinish, Code: msgStatus})
+	c.send(message{Status: statusFinish, Type: msgStatus})
 }
 
 func readConfig() (config, error) {

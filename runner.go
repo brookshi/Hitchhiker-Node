@@ -23,11 +23,6 @@ type testCase struct {
 	trace            func(rst runResult)
 }
 
-type requestItem struct {
-	body   requestBody
-	result runResult
-}
-
 type requestBody struct {
 	ID      string            `json:"id"`
 	Method  string            `json:"method"`
