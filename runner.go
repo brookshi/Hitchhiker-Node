@@ -34,6 +34,7 @@ type requestBody struct {
 
 type runResult struct {
 	ID            string          `json:"id"`
+	Param         string          `json:"param"`
 	Err           runError        `json:"error"`
 	Body          string          `json:"body"`
 	Status        int             `json:"status"`
