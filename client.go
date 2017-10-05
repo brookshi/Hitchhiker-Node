@@ -34,7 +34,7 @@ type config struct {
 }
 
 type client struct {
-	conn     *websocket.Conn //net.Conn
+	conn     *websocket.Conn
 	errChan  chan bool
 	testCase testCase
 }
@@ -59,7 +59,6 @@ func (c *client) Do() {
 		c.errChan = make(chan bool)
 		throttle := time.Tick(config.Interval * time.Second)
 		c.conn, err = websocket.Dial("ws://"+config.Address, "", "http://"+config.Address)
-		//c.conn, err = net.Dial("tcp", config.Address)
 		if err != nil {
 			hlog.Error.Println("connect:", err)
 			go func() { c.errChan <- true }()
@@ -90,21 +89,6 @@ func (c *client) read() {
 		hlog.Info.Println("read: ", string(buf))
 		go c.handleMsg(msg)
 	}
-	// reader := bufio.NewReader(c.conn)
-	// for {
-	// 	hlog.Info.Printf("read")
-	// 	content, err := reader.Read.ReadBytes(byte('\n'))
-	// 	if err != nil {
-	// 		hlog.Error.Println("read:", err)
-	// 		c.testCase.stop()
-	// 		c.errChan <- true
-	// 		return
-	// 	}
-	// 	hlog.Info.Println("read: ", string(content))
-	// 	var msg message
-	// 	json.Unmarshal(content, &msg)
-	// 	go c.handleMsg(msg)
-	// }
 }
 
 func (c *client) handleMsg(msg message) {

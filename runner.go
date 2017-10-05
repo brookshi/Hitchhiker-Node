@@ -118,7 +118,9 @@ func doRequestItem(body requestBody, httpClient http.Client) (result runResult) 
 	if err != nil {
 		fmt.Println(err)
 		result.Err = runError{err.Error()}
-		req.Close = true
+		if req != nil {
+			req.Close = true
+		}
 	} else {
 		trace := &httptrace.ClientTrace{
 			DNSStart: func(info httptrace.DNSStartInfo) {
