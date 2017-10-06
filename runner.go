@@ -10,14 +10,17 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/robertkrimen/otto"
 )
 
 type testCase struct {
-	RequestBodyList  []requestBody `json:"requestBodyList"`
-	TotalCount       int           `json:"totalCount"`
-	ConcurrencyCount int           `json:"concurrencyCount"`
-	QPS              int           `json:"qps"`
-	Timeout          int           `json:"timeout"`
+	RequestBodyList  []requestBody     `json:"requestBodyList"`
+	EnvVariables     map[string]string `json:"envVariables"`
+	TotalCount       int               `json:"totalCount"`
+	ConcurrencyCount int               `json:"concurrencyCount"`
+	QPS              int               `json:"qps"`
+	Timeout          int               `json:"timeout"`
 	results          chan []runResult
 	forceStop        int32
 	trace            func(rst runResult)
@@ -52,6 +55,11 @@ type duration struct {
 
 type runError struct {
 	Message string `json:"message"`
+}
+
+type testResult struct {
+	Tests     map[string]bool   `json:"tests"`
+	Variables map[string]string `json:"variables"`
 }
 
 func (c *testCase) Run() {
@@ -94,8 +102,10 @@ func (c *testCase) work(times int) {
 
 func (c *testCase) doRequest(httpClient http.Client) {
 	results := make([]runResult, len(c.RequestBodyList))
+	variables := make(map[string]string)
+	cookies := make(map[string]string)
 	for i, body := range c.RequestBodyList {
-		results[i] = doRequestItem(body, httpClient)
+		results[i] = doRequestItem(body, httpClient, c.EnvVariables, variables, cookies)
 		if c.trace != nil {
 			c.trace(results[i])
 		}
@@ -107,13 +117,13 @@ func (c *testCase) stop() {
 	atomic.CompareAndSwapInt32(&c.forceStop, 0, 1)
 }
 
-func doRequestItem(body requestBody, httpClient http.Client) (result runResult) {
+func doRequestItem(body requestBody, httpClient http.Client, envVariables map[string]string, variables map[string]string, cookies map[string]string) (result runResult) {
 	var dnsStart, connectStart, reqStart time.Time
 	var duration duration
 	result = runResult{ID: body.ID}
 
 	//now := time.Now()
-	req, err := buildRequest(body)
+	req, err := buildRequest(body, cookies, envVariables, variables)
 
 	if err != nil {
 		fmt.Println(err)
@@ -149,31 +159,114 @@ func doRequestItem(body requestBody, httpClient http.Client) (result runResult) 
 			result.Status = res.StatusCode
 			result.StatusMessage = res.Status
 			result.Headers = res.Header
+			for k, v := range result.Headers {
+				if strings.ToLower(k) == "cookie" {
+					for sk, sv := range readCookies(strings.Join(v, ";")) {
+						cookies[sk] = sv
+					}
+				}
+			}
 			content, err := ioutil.ReadAll(res.Body)
 			if err != nil {
 				result.Err = runError{err.Error()}
 			} else {
 				result.Body = string(content)
 			}
+
+			testsStr := prepareTests(body.Tests, variables, envVariables)
+			vm := otto.New()
+			testRst, err := vm.Run(testsStr)
+			if err != nil {
+				result.Tests[err.Error()] = false
+			} else {
+				tests, _ := testRst.Object().Get("tests")
+				vars, _ := testRst.Object().Get("variables")
+				for _, k := range tests.Object().Keys() {
+					testValue, _ := tests.Object().Get(k)
+					result.Tests[k], _ = testValue.ToBoolean()
+				}
+				for _, k := range vars.Object().Keys() {
+					varValue, _ := tests.Object().Get(k)
+					variables[k] = varValue.String()
+				}
+			}
 			defer res.Body.Close()
+		} else {
+			result.Err = runError{err.Error()}
 		}
 	}
 	return
 }
 
-func buildRequest(reqBody requestBody) (*http.Request, error) {
+func buildRequest(reqBody requestBody, cookies map[string]string, envVariables map[string]string, variables map[string]string) (*http.Request, error) {
 	var bodyReader io.Reader
 	if reqBody.Body != "" {
-		bodyReader = strings.NewReader(reqBody.Body)
+		bodyReader = strings.NewReader(applyAllVariables(reqBody.Body, variables, envVariables))
 	}
-	req, err := http.NewRequest(reqBody.Method, reqBody.URL, bodyReader)
+	req, err := http.NewRequest(reqBody.Method, applyAllVariables(reqBody.URL, variables, envVariables), bodyReader)
 	if err != nil {
 		return nil, err
 	}
 	headers := make(http.Header)
 	for k, v := range reqBody.Headers {
-		headers.Set(k, v)
+		if strings.ToLower(k) == "cookie" {
+			v = applyCookies(v, cookies)
+		}
+		headers.Set(applyAllVariables(k, variables, envVariables), applyAllVariables(v, variables, envVariables))
 	}
 	req.Header = headers
 	return req, nil
+}
+
+func applyAllVariables(content string, variables map[string]string, envVariables map[string]string) string {
+	return applyVariables(applyVariables(content, variables), envVariables)
+}
+
+func applyVariables(content string, variables map[string]string) string {
+	if len(content) == 0 || len(variables) == 0 {
+		return content
+	}
+	for k, v := range variables {
+		content = strings.Replace(content, fmt.Sprintf("{{%s}}", k), v, -1)
+	}
+	return content
+}
+
+func applyCookies(value string, cookies map[string]string) string {
+	if len(cookies) == 0 || value == "nocookie" {
+		return value
+	}
+
+	recordCookies := readCookies(value)
+	for k, v := range cookies {
+		if _, ok := recordCookies[k]; !ok {
+			value = fmt.Sprintf("%s;%s", value, v)
+		}
+	}
+	return value
+}
+
+func readCookies(cookies string) map[string]string {
+	cookieMap := make(map[string]string)
+	cookieArr := strings.Split(cookies, ";")
+	for _, v := range cookieArr {
+		v = strings.Trim(v, " ")
+		i := strings.Index(v, "=")
+		if i < 0 {
+			i = len(v)
+		}
+		cookieMap[v[:i]] = v
+	}
+	return cookieMap
+}
+
+func prepareTests(tests string, variables map[string]string, envVariables map[string]string) string {
+	tests = applyAllVariables(tests, variables, envVariables)
+	return fmt.Sprintf(`
+		var tests = {};
+		var $variables$ = {};
+		var $export$ = function(obj){ };
+		%s
+		return JSON.stringify({tests, variables: $variables$});
+	`, tests)
 }
