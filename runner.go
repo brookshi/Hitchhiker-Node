@@ -36,15 +36,15 @@ type requestBody struct {
 }
 
 type runResult struct {
-	ID            string          `json:"id"`
-	Param         string          `json:"param"`
-	Err           runError        `json:"error"`
-	Body          string          `json:"body"`
-	Status        int             `json:"status"`
-	StatusMessage string          `json:"statusMessage"`
-	Duration      duration        `json:"duration"`
-	Headers       http.Header     `json:"headers"`
-	Tests         map[string]bool `json:"tests"`
+	ID            string            `json:"id"`
+	Param         string            `json:"param"`
+	Err           runError          `json:"error"`
+	Body          string            `json:"body"`
+	Status        int               `json:"status"`
+	StatusMessage string            `json:"statusMessage"`
+	Duration      duration          `json:"duration"`
+	Headers       map[string]string `json:"headers"`
+	Tests         map[string]bool   `json:"tests"`
 }
 
 type duration struct {
@@ -55,11 +55,6 @@ type duration struct {
 
 type runError struct {
 	Message string `json:"message"`
-}
-
-type testResult struct {
-	Tests     map[string]bool   `json:"tests"`
-	Variables map[string]string `json:"variables"`
 }
 
 func (c *testCase) Run() {
@@ -157,11 +152,13 @@ func doRequestItem(body requestBody, httpClient http.Client, envVariables map[st
 		if err == nil {
 			result.Duration = duration
 			result.Status = res.StatusCode
-			result.StatusMessage = res.Status
-			result.Headers = res.Header
-			for k, v := range result.Headers {
+			result.StatusMessage = parseStatusMsg(res.Status, res.StatusCode)
+			result.Headers = make(map[string]string)
+			for k, v := range res.Header {
+				hv := strings.Join(v, ";")
+				result.Headers[k] = hv
 				if strings.ToLower(k) == "cookie" {
-					for sk, sv := range readCookies(strings.Join(v, ";")) {
+					for sk, sv := range readCookies(hv) {
 						cookies[sk] = sv
 					}
 				}
@@ -269,4 +266,12 @@ func prepareTests(tests string, variables map[string]string, envVariables map[st
 		%s
 		return JSON.stringify({tests, variables: $variables$});
 	`, tests)
+}
+
+func parseStatusMsg(status string, statusCode int) string {
+	statusCodeStr := string(statusCode)
+	if strings.HasPrefix(status, statusCodeStr) {
+		status = strings.Trim(strings.TrimPrefix(status, statusCodeStr), " ")
+	}
+	return status
 }
