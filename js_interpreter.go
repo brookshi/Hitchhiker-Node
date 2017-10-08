@@ -59,6 +59,7 @@ func ottoInterpret(jsStr string, runResult runResult) (result testResult) {
 	vm.Set("responseCode_Msg", runResult.StatusMessage)
 	headers, _ := json.Marshal(runResult.Headers)
 	vm.Set("responseHeaders_Str", string(headers))
+	vm.Set("responseTime", float64((runResult.Duration.Connect+runResult.Duration.DNS+runResult.Duration.Request).Nanoseconds())/float64(time.Millisecond))
 	testRst, err := vm.Run(fmt.Sprintf(template, jsStr))
 	result = testResult{
 		Tests:     make(map[string]bool),

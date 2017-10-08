@@ -10,8 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/robertkrimen/otto"
 )
 
 type testCase struct {
@@ -32,11 +30,12 @@ type requestBody struct {
 	URL     string            `json:"url"`
 	Body    string            `json:"body"`
 	Headers map[string]string `json:"headers"`
-	Tests   string            `json:"tests"`
+	Tests   string            `json:"test"`
 }
 
 type runResult struct {
 	ID            string            `json:"id"`
+	Success       bool              `json:"success"`
 	Param         string            `json:"param"`
 	Err           runError          `json:"error"`
 	Body          string            `json:"body"`
@@ -115,7 +114,7 @@ func (c *testCase) stop() {
 func doRequestItem(body requestBody, httpClient http.Client, envVariables map[string]string, variables map[string]string, cookies map[string]string) (result runResult) {
 	var dnsStart, connectStart, reqStart time.Time
 	var duration duration
-	result = runResult{ID: body.ID}
+	result = runResult{ID: body.ID, Success: false}
 
 	//now := time.Now()
 	req, err := buildRequest(body, cookies, envVariables, variables)
@@ -171,22 +170,15 @@ func doRequestItem(body requestBody, httpClient http.Client, envVariables map[st
 			}
 
 			testsStr := prepareTests(body.Tests, variables, envVariables)
-			vm := otto.New()
-			testRst, err := vm.Run(testsStr)
-			if err != nil {
-				result.Tests[err.Error()] = false
-			} else {
-				tests, _ := testRst.Object().Get("tests")
-				vars, _ := testRst.Object().Get("variables")
-				for _, k := range tests.Object().Keys() {
-					testValue, _ := tests.Object().Get(k)
-					result.Tests[k], _ = testValue.ToBoolean()
-				}
-				for _, k := range vars.Object().Keys() {
-					varValue, _ := tests.Object().Get(k)
-					variables[k] = varValue.String()
-				}
+			testResult := interpret(Otto, testsStr, result)
+			result.Tests = make(map[string]bool)
+			for k, v := range testResult.Tests {
+				result.Tests[k] = v
 			}
+			for k, v := range testResult.Variables {
+				variables[k] = v
+			}
+			result.Success = true
 			defer res.Body.Close()
 		} else {
 			result.Err = runError{err.Error()}
@@ -258,14 +250,7 @@ func readCookies(cookies string) map[string]string {
 }
 
 func prepareTests(tests string, variables map[string]string, envVariables map[string]string) string {
-	tests = applyAllVariables(tests, variables, envVariables)
-	return fmt.Sprintf(`
-		var tests = {};
-		var $variables$ = {};
-		var $export$ = function(obj){ };
-		%s
-		return JSON.stringify({tests, variables: $variables$});
-	`, tests)
+	return applyAllVariables(tests, variables, envVariables)
 }
 
 func parseStatusMsg(status string, statusCode int) string {
