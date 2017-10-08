@@ -15,7 +15,7 @@ import (
 type testCase struct {
 	RequestBodyList  []requestBody     `json:"requestBodyList"`
 	EnvVariables     map[string]string `json:"envVariables"`
-	TotalCount       int               `json:"totalCount"`
+	Repeat           int               `json:"repeat"`
 	ConcurrencyCount int               `json:"concurrencyCount"`
 	QPS              int               `json:"qps"`
 	Timeout          int               `json:"timeout"`
@@ -57,7 +57,7 @@ type runError struct {
 }
 
 func (c *testCase) Run() {
-	c.results = make(chan []runResult, c.TotalCount)
+	c.results = make(chan []runResult, c.Repeat*c.ConcurrencyCount)
 	atomic.StoreInt32(&c.forceStop, 0)
 	c.start()
 	close(c.results)
@@ -69,7 +69,7 @@ func (c *testCase) start() {
 
 	for i := 0; i < c.ConcurrencyCount; i++ {
 		go func() {
-			c.work(c.TotalCount / c.ConcurrencyCount)
+			c.work(c.Repeat)
 			waiter.Done()
 		}()
 	}
