@@ -19,6 +19,7 @@ type testCase struct {
 	ConcurrencyCount int               `json:"concurrencyCount"`
 	QPS              int               `json:"qps"`
 	Timeout          int               `json:"timeout"`
+	KeepAlive        bool              `json:"keepAlive"`
 	results          chan []runResult
 	forceStop        int32
 	trace            func(rst runResult)
@@ -82,7 +83,10 @@ func (c *testCase) work(times int) {
 		throttle = time.Tick(time.Duration(1e6/(c.QPS)) * time.Microsecond)
 	}
 
-	httpClient := http.Client{Timeout: time.Duration(c.Timeout) * time.Second}
+	transport := &http.Transport{
+		DisableKeepAlives: !c.KeepAlive,
+	}
+	httpClient := http.Client{Transport: transport, Timeout: time.Duration(c.Timeout) * time.Second}
 	for i := 0; i < times; i++ {
 		if c.QPS > 0 {
 			<-throttle
