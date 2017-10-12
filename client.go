@@ -117,7 +117,7 @@ func (c *client) send(msg message) {
 		hlog.Error.Println("stringify message error: ", err)
 		return
 	}
-	hlog.Info.Println("send request run result")
+	hlog.Info.Println("send request run result", msg.Type)
 	c.conn.Write(buf)
 }
 
