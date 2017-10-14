@@ -27,6 +27,7 @@ type testCase struct {
 
 type requestBody struct {
 	ID      string            `json:"id"`
+	Param   string            `json:"param"`
 	Method  string            `json:"method"`
 	URL     string            `json:"url"`
 	Body    string            `json:"body"`
@@ -118,7 +119,7 @@ func (c *testCase) stop() {
 func doRequestItem(body requestBody, httpClient http.Client, envVariables map[string]string, variables map[string]string, cookies map[string]string) (result runResult) {
 	var dnsStart, connectStart, reqStart time.Time
 	var duration duration
-	result = runResult{ID: body.ID, Success: false}
+	result = runResult{ID: body.ID, Param: body.Param, Success: false}
 
 	//now := time.Now()
 	req, err := buildRequest(body, cookies, envVariables, variables)
