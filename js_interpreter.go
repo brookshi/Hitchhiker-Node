@@ -8,7 +8,7 @@ import (
 	"github.com/brookshi/Hitchhiker-Node/hlog"
 
 	"github.com/robertkrimen/otto"
-	duktape "gopkg.in/olebedev/go-duktape.v2"
+	// duktape "gopkg.in/olebedev/go-duktape.v2"
 )
 
 type testResult struct {
@@ -80,25 +80,25 @@ func ottoInterpret(jsStr string, runResult runResult) (result testResult) {
 }
 
 func duktapeInterpret(jsStr string, runResult runResult) (result testResult) {
-	ctx := duktape.New()
-	ctx.PushString(runResult.Body)
-	ctx.PutGlobalString("responseBody")
-	ctx.PushNumber(float64((runResult.Duration.Connect + runResult.Duration.DNS + runResult.Duration.Request).Nanoseconds()) / float64(time.Millisecond))
-	ctx.PutGlobalString("responseTime")
-	ctx.PushNumber(float64(runResult.Status))
-	ctx.PutGlobalString("responseCode_Status")
-	ctx.PushString(runResult.StatusMessage)
-	ctx.PutGlobalString("responseCode_Msg")
-	headers, _ := json.Marshal(runResult.Headers)
-	ctx.PushString(string(headers))
-	ctx.PutGlobalString("responseHeaders_Str")
+	// ctx := duktape.New()
+	// ctx.PushString(runResult.Body)
+	// ctx.PutGlobalString("responseBody")
+	// ctx.PushNumber(float64((runResult.Duration.Connect + runResult.Duration.DNS + runResult.Duration.Request).Nanoseconds()) / float64(time.Millisecond))
+	// ctx.PutGlobalString("responseTime")
+	// ctx.PushNumber(float64(runResult.Status))
+	// ctx.PutGlobalString("responseCode_Status")
+	// ctx.PushString(runResult.StatusMessage)
+	// ctx.PutGlobalString("responseCode_Msg")
+	// headers, _ := json.Marshal(runResult.Headers)
+	// ctx.PushString(string(headers))
+	// ctx.PutGlobalString("responseHeaders_Str")
 
-	err := ctx.PevalString(fmt.Sprintf(template, jsStr))
-	data := ctx.GetString(-1)
-	if err != nil {
-		result.Tests[err.Error()] = false
-	} else {
-		json.Unmarshal([]byte(data), &result)
-	}
+	// err := ctx.PevalString(fmt.Sprintf(template, jsStr))
+	// data := ctx.GetString(-1)
+	// if err != nil {
+	// 	result.Tests[err.Error()] = false
+	// } else {
+	// 	json.Unmarshal([]byte(data), &result)
+	// }
 	return
 }
