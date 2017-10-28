@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -197,7 +198,7 @@ func buildRequest(reqBody requestBody, cookies map[string]string, envVariables m
 	if reqBody.Body != "" {
 		bodyReader = strings.NewReader(applyAllVariables(reqBody.Body, variables, envVariables))
 	}
-	req, err := http.NewRequest(reqBody.Method, applyAllVariables(reqBody.URL, variables, envVariables), bodyReader)
+	req, err := http.NewRequest(reqBody.Method, encodeUrl(applyAllVariables(reqBody.URL, variables, envVariables)), bodyReader)
 	if err != nil {
 		return nil, err
 	}
@@ -264,4 +265,19 @@ func parseStatusMsg(status string, statusCode int) string {
 		status = strings.Trim(strings.TrimPrefix(status, statusCodeStr), " ")
 	}
 	return status
+}
+
+func encodeUrl(u string) string {
+	var Url *url.URL
+	Url, err := url.Parse(u)
+	if err != nil {
+		return u
+	}
+
+	queryStrings := Url.Query()
+	for k, v := range queryStrings {
+		queryStrings[k] = []string{url.QueryEscape(v[0])}
+	}
+	Url.RawQuery = queryStrings.Encode()
+	return Url.String()
 }
