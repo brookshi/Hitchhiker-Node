@@ -275,9 +275,6 @@ func encodeUrl(u string) string {
 	}
 
 	queryStrings := Url.Query()
-	for k, v := range queryStrings {
-		queryStrings[k] = []string{url.QueryEscape(v[0])}
-	}
 	Url.RawQuery = queryStrings.Encode()
 	return Url.String()
 }
