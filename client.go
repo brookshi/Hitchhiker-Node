@@ -1,10 +1,13 @@
 package main
 
 import (
+	"archive/zip"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/brookshi/Hitchhiker-Node/hlog"
@@ -18,6 +21,8 @@ const (
 	msgRunResult
 	msgStop
 	msgStatus
+	msgFileStart
+	msgFileFinish
 )
 
 const (
@@ -26,7 +31,10 @@ const (
 	statusWorking
 	statusFinish
 	statusDown
+	statusFileReady
 )
+
+const dataFilePath = "./global_data.zip"
 
 type config struct {
 	Address  string
@@ -37,6 +45,7 @@ type client struct {
 	conn     *websocket.Conn
 	errChan  chan bool
 	testCase testCase
+	isFile   bool
 }
 
 type message struct {
@@ -77,18 +86,54 @@ func (c *client) Do() {
 func (c *client) read() {
 	defer c.conn.Close()
 	for {
-		var msg message
-		err := websocket.JSON.Receive(c.conn, &msg)
+		if c.isFile {
+			c.receiveFile()
+		} else {
+			c.receiveJSON()
+		}
+	}
+}
+
+func (c *client) receiveFile() {
+	var data []byte
+	err := websocket.Message.Receive(c.conn, &data)
+	if err != nil {
+		c.readErr(err)
+		return
+	}
+	if len(data) == 3 && data[0] == 36 {
+		c.isFile = false
+		deCompress()
+		go c.handleMsg(message{Type: msgFileFinish})
+	} else {
+		err = saveFile(data)
 		if err != nil {
-			hlog.Error.Println("read:", err)
-			c.testCase.stop()
-			c.errChan <- true
+			c.readErr(err)
 			return
 		}
-		buf, _ := json.Marshal(msg)
-		hlog.Info.Println("read: ", string(buf))
-		go c.handleMsg(msg)
 	}
+}
+
+func (c *client) receiveJSON() {
+	var msg message
+	err := websocket.JSON.Receive(c.conn, &msg)
+	if err != nil {
+		c.readErr(err)
+		return
+	}
+	buf, _ := json.Marshal(msg)
+	hlog.Info.Println("read: ", string(buf))
+	if msg.Type == msgFileStart {
+		hlog.Info.Println("status: file start")
+		c.isFile = true
+	}
+	go c.handleMsg(msg)
+}
+
+func (c *client) readErr(e error) {
+	hlog.Error.Println("read:", e)
+	c.testCase.stop()
+	c.errChan <- true
 }
 
 func (c *client) handleMsg(msg message) {
@@ -106,6 +151,9 @@ func (c *client) handleMsg(msg message) {
 		c.send(message{Status: statusWorking, Type: msgStatus})
 		c.testCase.Run()
 		c.finish()
+	case msgFileFinish:
+		hlog.Info.Println("status: file finish")
+		c.send(message{Status: statusFileReady, Type: msgStatus})
 	case msgStop:
 		c.finish()
 	}
@@ -135,4 +183,74 @@ func readConfig() (config, error) {
 	}
 	err = json.Unmarshal(file, &c)
 	return c, err
+}
+
+func saveFile(data []byte) error {
+	if _, err := os.Stat(dataFilePath); !os.IsNotExist(err) {
+		os.Remove(dataFilePath)
+	}
+
+	f, err := os.OpenFile(dataFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	n, err := f.Write(data)
+	if err == nil && n < len(data) {
+		err = io.ErrShortWrite
+	}
+	if err1 := f.Close(); err == nil {
+		err = err1
+	}
+	return err
+}
+
+func deCompress() error {
+	reader, err := zip.OpenReader(dataFilePath)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	for _, file := range reader.File {
+		rc, err := file.Open()
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+		filename := file.Name
+		err = os.MkdirAll(getDir(filename), 0755)
+		if err != nil {
+			return err
+		}
+		w, err := os.Create(filename)
+		if err != nil {
+			return err
+		}
+		defer w.Close()
+		_, err = io.Copy(w, rc)
+		if err != nil {
+			return err
+		}
+		w.Close()
+		rc.Close()
+	}
+	return nil
+}
+
+func getDir(path string) string {
+	return subString(path, 0, strings.LastIndex(path, "/"))
+}
+
+func subString(str string, start, end int) string {
+	rs := []rune(str)
+	length := len(rs)
+
+	if start < 0 || start > length {
+		panic("start is wrong")
+	}
+
+	if end < start || end > length {
+		panic("end is wrong")
+	}
+
+	return string(rs[start:end])
 }
