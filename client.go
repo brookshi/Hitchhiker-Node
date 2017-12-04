@@ -1,13 +1,9 @@
 package main
 
 import (
-	"archive/zip"
 	"encoding/json"
-	"io"
-	"io/ioutil"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/brookshi/Hitchhiker-Node/hlog"
@@ -103,7 +99,7 @@ func (c *client) receiveFile() {
 	}
 	if len(data) == 3 && data[0] == 36 {
 		c.isFile = false
-		deCompress()
+		unzip(dataFilePath, "global_data/")
 		go c.handleMsg(message{Type: msgFileFinish})
 	} else {
 		err = saveFile(data)
@@ -172,85 +168,4 @@ func (c *client) send(msg message) {
 func (c *client) finish() {
 	c.testCase.stop()
 	c.send(message{Status: statusFinish, Type: msgStatus})
-}
-
-func readConfig() (config, error) {
-	var c config
-	file, err := ioutil.ReadFile("./config.json")
-	if err != nil {
-		hlog.Error.Println("read config failed: ", err)
-		return c, err
-	}
-	err = json.Unmarshal(file, &c)
-	return c, err
-}
-
-func saveFile(data []byte) error {
-	if _, err := os.Stat(dataFilePath); !os.IsNotExist(err) {
-		os.Remove(dataFilePath)
-	}
-
-	f, err := os.OpenFile(dataFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		return err
-	}
-	n, err := f.Write(data)
-	if err == nil && n < len(data) {
-		err = io.ErrShortWrite
-	}
-	if err1 := f.Close(); err == nil {
-		err = err1
-	}
-	return err
-}
-
-func deCompress() error {
-	reader, err := zip.OpenReader(dataFilePath)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-	for _, file := range reader.File {
-		rc, err := file.Open()
-		if err != nil {
-			return err
-		}
-		defer rc.Close()
-		filename := file.Name
-		err = os.MkdirAll(getDir(filename), 0755)
-		if err != nil {
-			return err
-		}
-		w, err := os.Create(filename)
-		if err != nil {
-			return err
-		}
-		defer w.Close()
-		_, err = io.Copy(w, rc)
-		if err != nil {
-			return err
-		}
-		w.Close()
-		rc.Close()
-	}
-	return nil
-}
-
-func getDir(path string) string {
-	return subString(path, 0, strings.LastIndex(path, "/"))
-}
-
-func subString(str string, start, end int) string {
-	rs := []rune(str)
-	length := len(rs)
-
-	if start < 0 || start > length {
-		panic("start is wrong")
-	}
-
-	if end < start || end > length {
-		panic("end is wrong")
-	}
-
-	return string(rs[start:end])
 }

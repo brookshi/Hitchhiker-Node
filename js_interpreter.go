@@ -21,6 +21,10 @@ const (
 	Otto
 )
 
+const sandbox = `
+	
+`
+
 const template = `
 	var responseObj = {};
 	try {
