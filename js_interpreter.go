@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"fknsrs.biz/p/ottoext/loop"
 	"github.com/brookshi/Hitchhiker-Node/hlog"
 
 	"github.com/robertkrimen/otto"
@@ -20,10 +21,6 @@ const (
 	Duktape = iota
 	Otto
 )
-
-const sandbox = `
-	
-`
 
 const template = `
 	var responseObj = {};
@@ -45,7 +42,7 @@ const template = `
 	var $variables$ = {};
 	var $export$ = function(obj){ };
 	%s
-	JSON.stringify({tests: tests, variables: $variables$});
+	$$out = JSON.stringify({tests: tests, variables: $variables$});
 `
 
 func interpret(engine byte, jsStr string, runResult runResult) testResult {
@@ -58,13 +55,15 @@ func interpret(engine byte, jsStr string, runResult runResult) testResult {
 
 func ottoInterpret(jsStr string, runResult runResult) (result testResult) {
 	vm := otto.New()
+	l := loop.New(vm)
 	vm.Set("responseBody", runResult.Body)
 	vm.Set("responseCode_Status", runResult.Status)
 	vm.Set("responseCode_Msg", runResult.StatusMessage)
 	headers, _ := json.Marshal(runResult.Headers)
 	vm.Set("responseHeaders_Str", string(headers))
 	vm.Set("responseTime", float64((runResult.Duration.Connect+runResult.Duration.DNS+runResult.Duration.Request).Nanoseconds())/float64(time.Millisecond))
-	testRst, err := vm.Run(fmt.Sprintf(template, jsStr))
+	err := l.EvalAndRun(fmt.Sprintf(template, jsStr))
+	testRst, err := vm.Get("$$out")
 	result = testResult{
 		Tests:     make(map[string]bool),
 		Variables: make(map[string]string),
